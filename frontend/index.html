@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>JKB-DUMP :: 驾考宝典数据浏览器</title>
+<style>
+/* ========== 极简灰阶主题 ==========
+   无圆角 无阴影 无渐变 无动画 纯原生
+   灰阶层级 + 单一低饱和暖金强调
+   性能优先: 只画必需的像素 */
+:root{
+  --bg:#111111;
+  --bg2:#161616;
+  --bg3:#1e1e1e;
+  --fg:#e8e8e8;
+  --fg-dim:#9a9a9a;
+  --fg-mut:#5a5a5a;
+  --amber:#d3b25e;      /* 唯一强调色: 链接/标题/重要数字 */
+  --red:#c05757;        /* 仅错误态 */
+  --cyan:#9a9a9a;       /* 信息字段 = 次级灰 */
+  --border:#2b2b2b;
+  --mono:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0!important}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--fg);
+  font-family:var(--mono);
+  font-size:13px;
+  line-height:1.55;
+  text-rendering:optimizeSpeed;
+  -webkit-font-smoothing:none;
+}
+/* 顶栏 */
+#topbar{
+  background:var(--bg2);
+  border-bottom:2px solid var(--fg-dim);
+  padding:6px 12px;
+  display:flex;align-items:center;gap:14px;
+  font-size:12px;
+  position:sticky;top:0;z-index:10;
+  white-space:nowrap;overflow:hidden;
+}
+#topbar .title{font-weight:bold;color:var(--amber);letter-spacing:1px}
+#topbar .sep{color:var(--fg-mut)}
+#topbar .stat{color:var(--fg-dim)}
+#topbar .stat b{color:var(--fg)}
+#topbar .right{margin-left:auto;color:var(--fg-mut);font-size:11px}
+/* 布局 */
+#layout{display:flex;height:calc(100vh - 36px)}
+/* 侧栏 */
+#sidebar{
+  width:190px;min-width:190px;
+  background:var(--bg2);
+  border-right:2px solid var(--border);
+  overflow-y:auto;
+  padding:8px 0;
+  flex-shrink:0;
+}
+#sidebar .nav-head{font-size:10px;color:var(--fg-mut);padding:6px 12px 2px;letter-spacing:2px}
+#sidebar a.nav{
+  display:block;padding:4px 12px;color:var(--fg-dim);
+  text-decoration:none;font-size:12px;border-left:3px solid transparent;cursor:pointer;
+}
+#sidebar a.nav:hover{background:var(--bg3);color:var(--fg)}
+#sidebar a.nav.active{background:var(--bg3);color:var(--amber);border-left-color:var(--amber)}
+/* 主区 */
+#main{flex:1;overflow-y:auto;padding:14px 18px;min-width:0}
+h1{font-size:17px;color:var(--fg);margin-bottom:4px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+h1 .hash{color:var(--fg-mut);font-weight:normal}
+h2{font-size:13px;color:var(--fg);margin:16px 0 6px;border-bottom:1px solid var(--border);padding-bottom:3px}
+h3{font-size:12px;color:var(--fg-dim);margin:10px 0 4px}
+.sub{color:var(--fg-dim);font-size:11px;margin-bottom:12px;line-height:1.6}
+.badge{display:inline-block;font-size:10px;padding:0 5px;border:1px solid var(--fg-dim);color:var(--fg-dim);margin-left:5px;white-space:nowrap}
+.badge.ok{border-color:var(--fg);color:var(--fg)}
+.badge.new{border-color:var(--border);color:var(--fg-dim)}
+.badge.vip{border-color:var(--amber);color:var(--amber)}
+.badge.v500{border-color:var(--border);color:var(--fg-dim)}
+/* 统计格 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:7px;margin:8px 0}
+.tile{background:var(--bg2);border:1px solid var(--border);padding:7px 9px}
+.tile .n{font-size:19px;font-weight:bold;color:var(--fg);font-variant-numeric:tabular-nums}
+.tile .n small{font-size:11px;color:var(--fg-dim);font-weight:normal}
+.tile .l{font-size:9px;color:var(--fg-mut);margin-top:2px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hv-tile{cursor:pointer;transition:border-color .12s}
+.hv-tile:hover{border-color:var(--amber)}
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:11px;margin:6px 0}
+th{text-align:left;font-size:9px;color:var(--fg-mut);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--fg-dim);padding:3px 7px;white-space:nowrap}
+td{border-bottom:1px solid var(--border);padding:3px 7px;vertical-align:top;word-break:break-word}
+tr:hover td{background:var(--bg3)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td .dim{color:var(--fg-mut);font-size:10px}
+a{color:var(--amber);text-decoration:none;cursor:pointer}
+a:hover{text-decoration:underline}
+/* 车型卡 */
+.car-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px;margin:8px 0}
+.car{background:var(--bg2);border:1px solid var(--border);padding:7px 9px;cursor:pointer}
+.car:hover{border-color:var(--amber)}
+.car .name{font-size:12px;color:var(--fg);font-weight:bold}
+.car .meta{font-size:9px;color:var(--fg-mut);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.car .qs{font-size:10px;color:var(--fg-dim);margin-top:3px}
+/* 题目列表 */
+.qlist{list-style:none}
+.qlist li{padding:5px 9px;border-bottom:1px solid var(--border);cursor:pointer}
+.qlist li:hover{background:var(--bg3)}
+.qlist .qid{color:var(--fg-dim);font-size:10px;margin-right:7px;font-variant-numeric:tabular-nums}
+.qlist .qtext{color:var(--fg);font-size:12px}
+/* 详情 */
+.detail{background:var(--bg2);border:1px solid var(--border);padding:10px 12px;margin:8px 0}
+.detail .field{margin:5px 0}
+.detail .flabel{font-size:9px;color:var(--fg-mut);text-transform:uppercase;letter-spacing:1px;margin-right:8px;display:inline-block;min-width:72px;vertical-align:top;padding-top:1px}
+.detail .fval{color:var(--fg);font-size:12px}
+.detail .fval.dim{color:var(--fg-dim)}
+.opt{display:block;margin:1px 0;padding:1px 5px;font-size:12px}
+.opt.correct{background:var(--bg3);color:var(--amber)}
+.opt.correct::before{content:"[X] ";color:var(--amber)}
+/* 面包屑 */
+.crumb{font-size:11px;color:var(--fg-mut);margin-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb a{color:var(--fg)}
+.crumb .sep{color:var(--fg-mut);margin:0 3px}
+/* 输入 */
+#search-box{background:var(--bg2);border:1px solid var(--fg-dim);color:var(--fg);font-family:var(--mono);font-size:12px;padding:4px 9px;width:100%;max-width:440px;outline:none;margin-bottom:10px}
+#search-box:focus{border-color:var(--fg-dim)}
+/* 按钮 */
+button{background:var(--bg2);border:1px solid var(--fg-dim);color:var(--fg);font-family:var(--mono);font-size:10px;padding:2px 9px;cursor:pointer;margin-right:4px}
+button:hover{border-color:var(--fg);color:var(--fg)}
+/* 状态 */
+.loading{color:var(--fg-dim);font-size:11px;padding:16px;text-align:center}
+.loading::before{content:"[LOADING] "}
+.empty{color:var(--fg-mut);font-size:11px;padding:16px;text-align:center}
+.empty::before{content:"[EMPTY] "}
+.err{color:var(--red);font-size:11px;padding:16px;text-align:center;white-space:pre-wrap}
+.err::before{content:"[ERROR] "}
+/* 分页 */
+.pager{margin:8px 0;display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.pager .info{color:var(--fg-dim);font-size:10px}
+/* 滚动条 */
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:var(--fg-dim)}
+/* 折叠 */
+details{margin:5px 0}
+details summary{cursor:pointer;color:var(--fg-dim);font-size:11px}
+details[open] summary{color:var(--fg)}
+/* 视频/图片 */
+img.media{max-width:100%;max-height:180px;border:1px solid var(--border);margin:4px 0;display:block}
+video.media{max-width:100%;max-height:180px;border:1px solid var(--border);margin:4px 0;display:block}
+pre.dump{color:var(--fg-dim);font-size:10px;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto}
+/* ============ 移动端适配 ============ */
+/* 表格横向滚动: 桌面 table 正常显示, 窄屏自身滚动不撑爆 body */
+table{display:block;overflow-x:auto}
+th,td{min-width:52px}
+@media (min-width:769px){
+  table{display:table}
+  th,td{min-width:0}
+}
+/* 抽屉/汉堡 只在小屏显示 */
+#menu-btn{display:none;background:none;border:1px solid var(--fg-dim);color:var(--fg);font-size:15px;line-height:1;padding:2px 8px;cursor:pointer;flex-shrink:0}
+#scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;pointer-events:none;transition:opacity .18s}
+body.menu-open #scrim{display:block;opacity:1;pointer-events:auto}
+/* 小于等于 768: 侧栏收成抽屉 */
+@media (max-width:768px){
+  #topbar{height:36px;box-sizing:border-box}
+  #menu-btn{display:inline-block}
+  .tb-title{display:none}
+  #layout{display:block;height:auto}
+  #sidebar{
+    position:fixed;inset:0 auto 0 0;z-index:50;
+    width:min(78vw,240px);min-width:0;
+    transform:translateX(-105%);transition:transform .18s;
+    box-shadow:0 0 24px rgba(0,0,0,.5);
+    padding-top:8px;
+  }
+  body.menu-open #sidebar{transform:translateX(0)}
+  #main{padding:10px 12px}
+  #topbar{gap:8px;padding:6px 8px}
+  #topbar .right{font-size:9px}
+  h1{white-space:normal;word-break:break-word;font-size:16px}
+  .crumb{white-space:normal;overflow:visible;word-break:break-word}
+  .grid{grid-template-columns:1fr}
+  .car-grid{grid-template-columns:1fr 1fr}
+  video.media{max-height:none;width:100%}
+  img.media{max-height:220px;width:auto;margin:4px auto}
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <button id="menu-btn" aria-label="菜单">☰</button>
+  <span class="title">JKB-DUMP</span><span class="sep">|</span>
+  <span class="tb-title">驾考宝典数据浏览器</span><span class="sep">|</span>
+  <span class="stat" id="tb-version">version --</span><span class="sep">|</span>
+  <span class="stat" id="tb-dbs">dbs --</span><span class="sep">|</span>
+  <span class="stat" id="tb-qs">questions --</span>
+  <span class="right" id="tb-load">IDLE</span>
+</div>
+
+<div id="layout">
+  <div id="sidebar"></div>
+  <div id="main"></div>
+</div>
+<div id="scrim" onclick="closeMenu()"></div>
+
+<script>
+/* ============ 路径 ============ */
+/* 绝对路径: server.py 以项目根为根目录, 页面在 /frontend/ 下.
+   用绝对路径避免相对路径解析到 /frontend/ 子目录 */
+const DATA='/data'; const HV='/harvested';
+const FW='/frontend';                    // by_qid, rank_index, dp_count 在 frontend/
+
+/* ============ 车型名 ============ */
+const CAR_NAMES={
+ car:'小型汽车',bus:'大型客车',truck:'货车',moto:'摩托车',chuzu:'出租车',wangyue:'网约车',
+ jiaolian:'教练车',keyun:'客运',huoyun:'货运',weixian:'危险品',baozha:'爆炸品',judu:'剧毒品',
+ baozha_yayun:'爆炸品押运',baozha_zhuangxie:'爆炸品装卸',weixian_yayun:'危险品押运',
+ weixian_zhuangxie:'危险品装卸',judu_yayun:'剧毒品押运',judu_zhuangxie:'剧毒品装卸',
+ chache:'叉车',jiaolian_zaijiaoyu:'教练再教育',fixed_bvr:'固定翼BVR',fixed_wvr:'固定翼WVR',
+ fixed_coach:'固定翼教员',helicopter_bvr:'直升机BVR',helicopter_wvr:'直升机WVR',
+ helicopter_coach:'直升机教员',multi_bvr:'多旋翼BVR',multi_wvr:'多旋翼WVR',
+ multi_coach:'多旋翼教员',vtol_bvr:'垂直起降BVR',vtol_wvr:'垂直起降WVR',
+ vtol_coach:'垂直起降教员',light_trailer:'轻型挂车'
+};
+
+/* ============ 全局状态 ============ */
+let INDEX=null, totalQuestions=0;
+const qCache={};          // carType -> questions[] 全量缓存
+let currentView='overview', crumb=[];
+let rankIndex=null;       // rank_index.json 缓存
+let vidMap=null;          // questionId -> [{shortVideoId, videoUrl}] 讲解视频映射
+let vidUrlMap=null;       // shortVideoId -> videoUrl
+async function loadVids(){
+  if(vidMap)return vidMap;
+  try{
+    const [v,vu]=await Promise.all([
+      getJSON(HV+'/video-explain/video-list-all.json'),
+      getJSON(HV+'/video-explain/video-urls.json')
+    ]);
+    vidUrlMap=vu||{};
+    vidMap={};
+    for(const it of (v.itemList||[])){
+      const qid=String(it.questionId);
+      vidMap[qid]=vidMap[qid]||[];
+      for(const dl of (it.dataList||[])){
+        vidMap[qid].push({shortVideoId:dl.shortVideoId,
+          videoUrl:vidUrlMap[dl.shortVideoId]?.videoUrl||null});
+      }
+    }
+    return vidMap;
+  }catch(e){vidMap={};return vidMap;}
+}
+function vidBadge(qid){
+  const vids=vidMap&&vidMap[String(qid)];
+  if(!vids||!vids.length)return '';
+  return ' <span class="badge ok">▶讲解</span>';
+}
+function renderQuestionVideo(qid){
+  const vids=vidMap&&vidMap[qid];
+  if(!vids||!vids.length)return '';
+  let h=`<h2>讲解视频 <span class="badge ok">${fmt(vids.length)}</span></h2>`;
+  for(const v of vids){
+    if(v.videoUrl){
+      h+=`<video class="media" src="${esc(v.videoUrl)}" controls preload="metadata"></video>`;
+    }else{
+      h+=`<div class="dim">shortVideoId ${v.shortVideoId} (无直链)</div>`;
+    }
+  }
+  return h;
+}
+
+/* ============ 工具 ============ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>n==null?'--':Number(n).toLocaleString();
+function setLoad(t){const e=$('#tb-load');if(e)e.textContent=t;}
+/* 移动端抽屉菜单 */
+function openMenu(){document.body.classList.add('menu-open');}
+function closeMenu(){document.body.classList.remove('menu-open');}
+window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu();});
+document.addEventListener('DOMContentLoaded',()=>{
+  const mb=document.getElementById('menu-btn');
+  if(mb)mb.addEventListener('click',e=>{e.stopPropagation();openMenu();});
+});
+async function getJSON(url){
+  setLoad('GET '+url.split('/').slice(-2).join('/'));
+  try{
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok)throw new Error('HTTP '+r.status+' '+url);
+    return await r.json();
+  }catch(e){throw new Error(e.message);}
+  finally{setLoad('IDLE');}
+}
+
+/* ============ 导航 ============ */
+const NAV=[
+ {id:'overview',label:'总览'},
+ {id:'banks',label:'题库浏览'},
+ {id:'search',label:'题目搜索'},
+ {id:'official',label:'官方精选'},
+ {id:'dianping',label:'真题讨论区'},
+ {id:'video',label:'讲解视频'},
+ {id:'rank',label:'排行榜'},
+ {id:'jiaxiao',label:'驾校'},
+ {id:'route',label:'路线视频'},
+ {id:'icon',label:'交通图标'},
+ {id:'kejian',label:'课件'},
+ {id:'misc',label:'其他数据'},
+];
+const NUM=['01','02','03','04','05','06','07','08','09','10','11','12'];
+function renderNav(){
+  $('#sidebar').innerHTML=NAV.map((n,i)=>`<div class="nav-head">${NUM[i]}</div><a class="nav" data-view="${n.id}">${n.label}</a>`).join('');
+  $('#sidebar').querySelectorAll('.nav').forEach(a=>a.onclick=()=>{currentView=a.dataset.view;crumb=[];renderNav();renderView();closeMenu();});
+  const a=$('#sidebar').querySelector(`.nav[data-view="${currentView}"]`);
+  if(a)a.classList.add('active');
+}
+function crumbBar(){
+  return `<div class="crumb">${crumb.map((c,i)=>i===crumb.length-1?esc(c.label):`<a href="#" onclick="__crumb(${i});return false">${esc(c.label)}</a><span class="sep">/</span>`).join('')}</div>`;
+}
+/* 面包屑点击: 用真实函数引用调用, 避免闭包变量在全局求值时丢失 */
+window.__crumb=function(i){
+  const c=crumb[i];
+  if(c&&c.fn)c.fn();
+};
+
+function renderView(){
+  const m=$('#main');
+  const views={
+    overview:m=>overviewView(m),banks:m=>banksView(m),search:m=>searchView(m),
+    official:m=>officialView(m),dianping:m=>dianpingView(m),video:m=>videoView(m),
+    rank:m=>rankView(m),jiaxiao:m=>jiaxiaoView(m),route:m=>routeView(m),
+    icon:m=>iconView(m),kejian:m=>kejianView(m),misc:m=>miscView(m)
+  };
+  views[currentView](m);
+}
+/* 数据域 tile 跳转 */
+function goView(v){
+  if(!v)return;
+  currentView=v;crumb=[];renderNav();renderView();closeMenu();
+}
+
+/* ============ 总览 ============ */
+async function overviewView(main){
+  main.innerHTML='<div class="loading">加载总览</div>';
+  try{
+    if(!INDEX){INDEX=await getJSON(DATA+'/index.json');}
+  }catch(e){main.innerHTML=`<div class="err">无法加载 data/index.json<br>${esc(e.message)}<br>启动: cd jiakao-baodian-live && python frontend/server.py</div>`;return;}
+  const dbs=INDEX.dbs||{};
+  totalQuestions=INDEX.total_questions||Object.values(dbs).reduce((a,b)=>a+(b.questions||0),0);
+  $('#tb-version').textContent='version '+(dbs.car?.version||'--');
+  $('#tb-dbs').textContent='dbs '+INDEX.count;
+  $('#tb-qs').textContent='questions '+fmt(totalQuestions);
+
+  let html=`<h1>驾考宝典数据浏览器 <span class="hash">#${esc(INDEX.generated_at||'')}</span></h1>
+  <div class="sub">33 车型题库全量导出 + 13 数据域采集. 链路: 官方 CDN → 签名机 API 下载 dbs/*.db → XOR 解密导出, 媒体 car.db 主库补全.</div>
+  <div class="grid">
+    <div class="tile"><div class="n">${fmt(INDEX.count)}</div><div class="l">DB COUNT 车型库</div></div>
+    <div class="tile"><div class="n">${fmt(totalQuestions)}</div><div class="l">QUESTIONS 总题</div></div>
+    <div class="tile"><div class="n">${fmt(Object.values(dbs).reduce((a,b)=>a+(b.media_keys||0),0))}</div><div class="l">MEDIA 媒体</div></div>
+    <div class="tile"><div class="n">${fmt(Object.values(dbs).reduce((a,b)=>a+(b.exam_rules||0),0))}</div><div class="l">EXAM RULES 规则</div></div>
+  </div>`;
+  html+=`<h2>33 车型库 <span class="badge ok">题库版本 v${esc(dbs.car?.version||'--')}</span></h2>
+  <table><tr><th>车型</th><th>名称</th><th class="num">题目</th><th class="num">章节</th><th class="num">媒体</th><th class="num">规则</th><th>版本</th></tr>`;
+  for(const [k,d] of Object.entries(dbs).sort((a,b)=>(b[1].questions||0)-(a[1].questions||0))){
+    html+=`<tr><td><a href="#" onclick="openCar('${k}');return false">${esc(k)}</a></td>
+      <td class="dim">${esc(CAR_NAMES[k]||'')}</td>
+      <td class="num">${fmt(d.questions)}</td><td class="num">${fmt(d.chapters)}</td>
+      <td class="num">${fmt(d.media_keys)}</td><td class="num">${fmt(d.exam_rules)}</td>
+      <td class="dim">${esc(d.version||'--')}</td></tr>`;
+  }
+  html+='</table>';
+  html+=`<h2>数据域概览</h2><div class="grid" id="ov-hv"></div>`;
+  main.innerHTML=html;
+  loadHarvestStats($('#ov-hv'));
+}
+
+async function loadHarvestStats(el){
+  const items=[
+    ['dianping','真题讨论区',FW+'/by_qid/_count.json',d=>Object.keys(d).length,d=>Object.values(d).reduce((a,c)=>a+c,0)],
+    ['video','讲解视频',HV+'/video-explain/video-list-all.json',d=>(d.itemList||[]).length,d=>(d.itemList||[]).reduce((a,i)=>a+(i.dataList||[]).length,0)],
+    ['official','官方精选',HV+'/vip-practice/quick500-nanti100.json',d=>(d.quick500||[]).length+(d.nanti100||[]).length,0],
+    ['rank','排行榜',HV+'/rank/all-rank.json',d=>Object.keys(d).length,d=>Object.values(d).reduce((a,v)=>a+(v.rankCount||0),0)],
+    ['route','路线视频',HV+'/route-video/all-places.json',d=>Object.keys(d).length,d=>Object.values(d).reduce((a,c)=>a+(Array.isArray(c)?c.length:0),0)],
+    ['jiaxiao','驾校',HV+'/jiaxiao/all-cities.json',d=>Object.keys(d).length,d=>Object.values(d).reduce((a,c)=>a+(Array.isArray(c)?c.length:0),0)],
+    ['icon','交通图标',HV+'/traffic-icon/all-icons.json',d=>Object.values(d).reduce((a,c)=>a+c.length,0),0],
+    ['kejian','课件',HV+'/kejian/all-lectures.json',d=>Object.keys(d).length,d=>Object.values(d).reduce((a,c)=>a+c.length,0)],
+    ['vipx','vip解析',HV+'/vip-explain/all-vip-explain.json',d=>Object.keys(d).length,0],
+  ];
+  const navMap={dianping:'dianping',video:'video',official:'official',rank:'rank',route:'route',jiaxiao:'jiaxiao',icon:'icon',kejian:'kejian',vipx:'official'};
+  el.innerHTML=items.map(([k,label])=>`<div class="tile hv-tile" id="hvt-${k}" data-view="${navMap[k]||''}" onclick="goView('${navMap[k]||''}')"><div class="n">--</div><div class="l">${label} →</div></div>`).join('');
+  for(const [k,label,url,c1,c2] of items){
+    try{
+      const d=await getJSON(url);
+      const t=el.querySelector(`#hvt-${k}`);
+      if(t)t.innerHTML=`<div class="n">${fmt(c1(d))}</div><div class="l">${label} →</div>`;
+    }catch(e){}
+  }
+}
+
+/* ============ 题库浏览 ============ */
+async function banksView(main){
+  main.innerHTML='<div class="loading">加载车型列表</div>';
+  try{if(!INDEX)INDEX=await getJSON(DATA+'/index.json');}
+  catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;return;}
+  const dbs=INDEX.dbs||{};
+  let html=`<h1>题库浏览 <span class="hash">// 33 车型库</span></h1>
+  <div class="sub">点击车型 → 章节 → 题目. 每题含全部字段 + vip解析 + 精选集合 + 讨论区.</div>
+  <div class="car-grid">`;
+  for(const [k,d] of Object.entries(dbs).sort((a,b)=>(b[1].questions||0)-(a[1].questions||0))){
+    html+=`<div class="car" onclick="openCar('${k}')"><div class="name">${esc(k)}</div>
+      <div class="meta">${esc(CAR_NAMES[k]||'')}</div>
+      <div class="qs">${fmt(d.questions)} 题 / ${fmt(d.chapters)} 章</div></div>`;
+  }
+  html+='</div>';
+  main.innerHTML=html;
+}
+
+async function loadQuestions(carType,force){
+  if(qCache[carType]&&!force)return qCache[carType];
+  const q=await getJSON(`${DATA}/${carType}/questions.json`);
+  qCache[carType]=q;return q;
+}
+
+async function openCar(carType){
+  currentView='car';crumb=[{label:'题库浏览',fn:()=>banksView($('#main'))},{label:carType}];
+  renderNav();
+  const main=$('#main');
+  main.innerHTML=`<div class="loading">加载 ${carType} 题库</div>`;
+  try{
+    const [idx,q]=await Promise.all([getJSON(`${DATA}/${carType}/index.json`),loadQuestions(carType),loadVids()]);
+    const chapters=idx.chapters||[];
+    const nVids=vidMap?q.filter(x=>vidMap[String(x.question_id)]&&vidMap[String(x.question_id)].length).length:0;
+    let html=crumbBar();
+    html+=`<h1>${esc(carType)} <span class="hash">// ${esc(CAR_NAMES[carType]||'')}</span></h1>
+    <div class="sub">${fmt(q.length)} 题 / ${fmt(chapters.length)} 章 / 版本 ${esc(idx.version||'--')}</div>
+    <div class="grid">
+      <div class="tile"><div class="n">${fmt(q.length)}</div><div class="l">QUESTIONS</div></div>
+      <div class="tile"><div class="n">${fmt(chapters.length)}</div><div class="l">CHAPTERS</div></div>
+      <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.judge||0)}</div><div class="l">判断题</div></div>
+      <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.single||0)}</div><div class="l">单选题</div></div>
+      <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.multi||0)}</div><div class="l">多选题</div></div>
+      <div class="tile hv-tile" onclick="goView('official')"><div class="n">${fmt(q.filter(x=>x.vip_explain).length)}</div><div class="l">vip解析 →</div></div>
+      <div class="tile hv-tile" onclick="goView('video')"><div class="n">${fmt(nVids)}</div><div class="l">有讲解视频 →</div></div>
+    </div>
+    <h2>章节</h2><table><tr><th>#</th><th>章节</th><th class="num">题数</th></tr>`;
+    for(const c of chapters){
+      html+=`<tr><td class="dim">${c.file.replace('chapters/','').replace('.json','')}</td>
+        <td><a href="#" onclick="openChapter('${carType}','${esc(c.file)}');return false">${esc(c.name)}</a></td>
+        <td class="num">${fmt(c.count)}</td></tr>`;
+    }
+    html+='</table>';
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+async function openChapter(carType,file){
+  const cid=file.replace('chapters/','').replace('.json','');
+  crumb=[{label:'题库浏览',fn:()=>banksView($('#main'))},{label:carType,fn:()=>openCar(carType)},{label:'章节 '+cid,fn:()=>openChapter(carType,file)}];
+  renderNav();
+  const main=$('#main');
+  main.innerHTML=`<div class="loading">加载章节</div>`;
+  try{
+    const [ch,idx]=await Promise.all([
+      getJSON(`${DATA}/${carType}/${file}`),
+      getJSON(`${DATA}/${carType}/index.json`),
+      loadVids()
+    ]);
+    const qIds=(ch.questions||[]).map(x=>x.id);
+    const q=await loadQuestions(carType);
+    const list=q.filter(x=>qIds.includes(x.question_id));
+    let html=crumbBar();
+    html+=`<h1>${esc(ch.name)} <span class="hash">// ${fmt(list.length)} 题</span></h1>
+    <div class="pager"><button onclick="exportList('${carType}','${esc(file)}')">EXPORT</button>
+      <span class="info">${list.length} 题</span></div>
+    <ul class="qlist">`;
+    for(const x of list){
+      html+=qItem(x,carType);
+    }
+    html+='</ul>';
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+function qItem(x,carType){
+  const tags=[];
+  for(const s of (x.vip_sets||[]))tags.push(s==='quick500'?'<span class="badge v500">精简500</span>':'<span class="badge new">考前秘籍</span>');
+  const hasMedia=x.media_type?` <span class="badge">${x.media_type===1?'IMG':'VID'}</span>`:'';
+  return `<li onclick="openQuestion('${carType}',${x.question_id})">
+    <span class="qid">${fmt(x.question_id)}</span><span class="qtext">${esc((x.question||'').slice(0,70))}</span>
+    ${vidBadge(x.question_id)}${tags.join('')}${hasMedia}</li>`;
+}
+
+function exportList(carType,file){
+  getJSON(`${DATA}/${carType}/${file}`).then(ch=>{
+    const blob=new Blob([JSON.stringify(ch,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=`${carType}_${file.split('/').pop()}`;a.click();
+  });
+}
+
+/* ============ 题目详情 ============ */
+async function openQuestion(carType,qid){
+  crumb=crumb.filter(c=>c.label!=='题 '+qid);
+  crumb.push({label:'题 '+qid});
+  renderNav();
+  const main=$('#main');
+  main.innerHTML=`<div class="loading">加载题目</div>`;
+  try{
+    const [q,vm]=await Promise.all([loadQuestions(carType),loadVids()]);
+    const x=q.find(i=>String(i.question_id)===String(qid));
+    if(!x){main.innerHTML=`<div class="empty">题 ${qid} 不在 ${carType} 库</div>`;return;}
+    const letters='ABCDEFGH'.split('');
+    const bits=[1,2,4,8,16,32,64,128];
+    const sel=bits.filter(b=>(x.answer&b)).map(b=>letters[bits.indexOf(b)]);
+    let html=crumbBar();
+    html+=`<h1>题目 ${fmt(x.question_id)} <span class="hash">// ${esc(carType)}</span></h1>`;
+    html+=qTags(x);
+    html+=`<div class="detail">
+      <div class="field"><span class="flabel">题干</span><span class="fval">${esc(x.question)}</span></div>`;
+    if(x.media_type===1&&x.media_key)html+=`<div class="field"><span class="flabel">媒体</span><span class="fval dim">${esc(x.media_key)}</span><br><img class="media" src="/data/${carType}/media/${esc(x.media_key)}.jpg" onerror="this.style.display='none'"></div>`;
+    if(x.media_type===2&&x.media_key)html+=`<div class="field"><span class="flabel">媒体</span><span class="fval dim">${esc(x.media_key)}</span><br><video class="media" src="/data/${carType}/media/${esc(x.media_key)}.mp4" controls></video></div>`;
+    html+=`<div class="field"><span class="flabel">选项</span><span class="fval">`;
+    (x.options||[]).forEach((o,i)=>{if(o)html+=`<span class="opt ${sel.includes(letters[i])?'correct':''}">${letters[i]}. ${esc(o)}</span>`;});
+    html+=`</span></div>`;
+    html+=`<div class="field"><span class="flabel">答案</span><span class="fval dim">${sel.join(',')} (位掩码 ${x.answer})</span></div>`;
+    html+=`<div class="field"><span class="flabel">解析</span><span class="fval dim">${esc(x.explain||'--')}</span></div>`;
+    if(x.concise_explain)html+=`<div class="field"><span class="flabel">速记</span><span class="fval dim">${esc(x.concise_explain)}</span></div>`;
+    if(x.keywords)html+=`<div class="field"><span class="flabel">关键词</span><span class="fval dim">${esc(x.keywords)}</span></div>`;
+    if(x.assured_keywords)html+=`<div class="field"><span class="flabel">锁定词</span><span class="fval dim">${esc(x.assured_keywords)}</span></div>`;
+    if(x.illiteracy_explain)html+=`<div class="field"><span class="flabel">扫盲</span><span class="fval dim">${esc(x.illiteracy_explain)}</span></div>`;
+    if(x.explain_keywords)html+=`<div class="field"><span class="flabel">解析词</span><span class="fval dim">${esc(x.explain_keywords)}</span></div>`;
+    html+=`<div class="field"><span class="flabel">章节</span><span class="fval dim">${esc((x.chapter_names||[]).join(' / '))}</span></div>`;
+    html+=`<div class="field"><span class="flabel">属性</span><span class="fval dim">难度 ${x.difficulty} · 错率 ${x.wrong_rate!=null?(x.wrong_rate*100).toFixed(1):'--'}% · 题型 ${x.option_type} · 排序 ${x.sort}</span></div>`;
+    html+=`<div class="field"><span class="flabel">地区</span><span class="fval dim">${(x.areacodes||[]).join(', ')||'全国通用'}</span></div>`;
+    if(x.vip_explain){
+      html+=`<div class="field"><span class="flabel">巧记</span><span class="fval">${esc(x.vip_explain.artfulDetail||'--')}</span></div>`;
+      html+=`<div class="field"><span class="flabel">精简</span><span class="fval">${esc(x.vip_explain.concise||'--')}</span></div>`;
+    }
+    html+=`<div class="field"><span class="flabel">全部字段</span><details><summary>JSON dump</summary><pre class="dump">${esc(JSON.stringify(x,null,1))}</pre></details></div>`;
+    html+=`</div>`;
+    html+=renderQuestionVideo(String(qid));
+    html+=`<h2>真题讨论区 <span class="badge ok">评论</span></h2><div id="dp"><div class="loading">加载评论</div></div>`;
+    main.innerHTML=html;
+    loadDianping(qid,$('#dp'));
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+function qTags(x){
+  const t=[];
+  if(x.vip_explain)t.push('<span class="badge vip">vip解析</span>');
+  for(const s of (x.vip_sets||[]))t.push(s==='quick500'?'<span class="badge v500">官方精简500</span>':'<span class="badge new">考前秘籍</span>');
+  return t.join(' ');
+}
+
+async function loadDianping(qid,el){
+  try{
+    const d=await getJSON(`${FW}/by_qid/${qid}.json`);
+    if(!d||!d.length){el.innerHTML='<div class="empty">无评论</div>';return;}
+    const fmtTime=t=>{const dt=new Date(t);return dt?`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`:'--';};
+    let html=`<div class="sub">${fmt(d.length)} 条评论</div><ul class="qlist">`;
+    for(const c of d.slice(0,200)){
+      html+=`<li><div style="color:var(--fg)">${esc(c.author?.nickname||'匿名')}${c.zanCount?` <span class="dim">赞${c.zanCount}</span>`:''}<span class="dim"> ${fmtTime(c.createTime)}</span></div>
+        <div>${esc(c.content||'')}</div>
+        ${c.imageList&&c.imageList.length?`<div class="dim">[${c.imageList.length}图]</div>`:''}</li>`;
+    }
+    html+='</ul>';
+    el.innerHTML=html;
+  }catch(e){el.innerHTML=`<div class="empty">无评论文件 (${esc(e.message)})</div>`;}
+}
+
+/* ============ 搜索 ============ */
+function searchView(main){
+  main.innerHTML=`<h1>题目搜索</h1>
+  <div class="sub">全库搜索: 题号或题干关键词. 默认全 33 库.</div>
+  <input id="search-box" placeholder="题号 或 关键词 (如 800000 / 违法行为)"><div id="search-res"></div>`;
+  const box=$('#search-box');let timer=null;
+  box.oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>doSearch(box.value.trim()),300);};
+  box.focus();
+}
+
+async function doSearch(q){
+  const res=$('#search-res');
+  if(!q){res.innerHTML='';return;}
+  res.innerHTML='<div class="loading">搜索中</div>';
+  try{
+    if(!INDEX)INDEX=await getJSON(DATA+'/index.json');
+    const banks=Object.keys(INDEX.dbs||{});
+    const isId=/^\d+$/.test(q);
+    const out=[];
+    for(const b of banks){
+      try{
+        const all=await loadQuestions(b);
+        for(const x of all){
+          if(isId?String(x.question_id)===q:(x.question||'').includes(q)){
+            out.push(x);if(out.length>=200)break;
+          }
+        }
+      }catch(e){}
+      if(out.length>=200)break;
+    }
+    if(!out.length){res.innerHTML='<div class="empty">无匹配</div>';return;}
+    let html=`<div class="sub">${fmt(out.length)} 条${isId?' (精确题号)':''}</div><ul class="qlist">`;
+    for(const x of out){
+      html+=`<li onclick="openQuestion('${x.car_type}',${x.question_id})">
+        <span class="qid">${esc(x.car_type)}:${fmt(x.question_id)}</span>
+        <span class="qtext">${esc((x.question||'').slice(0,70))}</span></li>`;
+    }
+    html+='</ul>';
+    res.innerHTML=html;
+  }catch(e){res.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 官方精选 ============ */
+async function officialView(main){
+  main.innerHTML='<div class="loading">加载官方精选</div>';
+  try{
+    const s=await getJSON(HV+'/vip-practice/quick500-nanti100.json');
+    const q500=s.quick500||[],n100=s.nanti100||[];
+    const set=new Set([...q500,...n100]);
+    let html=`<h1>官方精选 <span class="hash">// vip-500 + vip-100</span></h1>
+    <div class="sub">renderer.js 挖出: practiceType=vip-500(精简500) + vip-100(考前秘籍). API 实测返回官方集合. 已合入 car 库 vip_sets 标签.</div>
+    <div class="grid">
+      <div class="tile"><div class="n">${fmt(q500.length)}</div><div class="l">QUICK500 精简500</div></div>
+      <div class="tile"><div class="n">${fmt(n100.length)}</div><div class="l">NANTI100 考前秘籍</div></div>
+      <div class="tile"><div class="n">${fmt(set.size)}</div><div class="l">并集去重</div></div>
+    </div>`;
+    html+=`<h2>精简500 <span class="badge new">quick500</span></h2><details open><summary>展开 ${q500.length} 题</summary><table><tr><th>题号</th><th>所属</th></tr>`;
+    for(const id of q500)html+=`<tr><td><a href="#" onclick="openQuestion('car',${id});return false">${id}</a></td><td class="dim">car</td></tr>`;
+    html+='</table></details>';
+    html+=`<h2>考前秘籍 <span class="badge new">nanti100</span></h2><details open><summary>展开 ${n100.length} 题</summary><table><tr><th>题号</th><th>所属</th></tr>`;
+    for(const id of n100)html+=`<tr><td><a href="#" onclick="openQuestion('car',${id});return false">${id}</a></td><td class="dim">car</td></tr>`;
+    html+='</table></details>';
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 真题讨论区 ============ */
+async function dianpingView(main){
+  main.innerHTML='<div class="loading">加载讨论区索引</div>';
+  try{
+    const d=await getJSON(FW+'/by_qid/_count.json');
+    const keys=Object.keys(d);
+    const total=keys.reduce((a,k)=>a+d[k],0);
+    main.innerHTML=`<h1>真题讨论区 <span class="hash">// ${fmt(keys.length)} 题有评论</span></h1>
+    <div class="sub">${fmt(total)} 条评论. 点击题号看讨论. 按题号拆桶, 前端按需加载.</div>
+    <input id="search-box" placeholder="题号过滤..."><div id="dp-list"></div>`;
+    const box=$('#search-box');
+    const render=()=>{
+      const f=box.value.trim();
+      $('#dp-list').innerHTML=keys.filter(k=>!f||k.includes(f)).map(k=>
+        `<div style="padding:2px 8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:11px" onclick="openQuestion('car',${k})">
+          <span class="qid">${k}</span><span class="dim">${fmt(d[k])} 评论</span></div>`).join('');
+    };
+    box.oninput=render;render();
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 讲解视频 ============ */
+let videoUrls=null;   // shortVideoId -> {questionId, videoUrl}
+async function videoView(main){
+  main.innerHTML='<div class="loading">加载视频列表</div>';
+  try{
+    const [v,vu]=await Promise.all([
+      getJSON(HV+'/video-explain/video-list-all.json'),
+      getJSON(HV+'/video-explain/video-urls.json')
+    ]);
+    videoUrls=vu||{};
+    const list=v.itemList||[];
+    main.innerHTML=`<h1>讲解视频 <span class="hash">// ${fmt(list.length)} 题</span></h1>
+    <div class="sub">题目讲解视频. 直链从 video-urls.json 联查, 实测全部可播放. 点击题号在题库详情内也可直接看.</div>
+    <input id="search-box" placeholder="题号过滤..."><div id="video-list"></div>`;
+    const render=()=>{
+      const f=$('#search-box').value.trim();
+      const rows=list.filter(i=>!f||String(i.questionId).includes(f)).slice(0,500);
+      $('#video-list').innerHTML=`<table><tr><th>题号</th><th>视频数</th><th>视频</th></tr>`+
+        rows.map(i=>{
+          const dl=i.dataList||[];
+          const vids=dl.map(x=>{
+            const url=videoUrls[x.shortVideoId]?.videoUrl;
+            if(url)return `<details><summary>▶ ${x.shortVideoId}</summary><video class="media" src="${esc(url)}" controls preload="metadata"></video></details>`;
+            return `<span class="dim">${x.shortVideoId}</span>`;
+          }).join(' ');
+          return `<tr><td><a href="#" onclick="openQuestion('car',${i.questionId});return false">${i.questionId}</a></td>
+            <td class="num">${dl.length}</td><td>${vids||'--'}</td></tr>`;}).join('')+'</table>';
+    };
+    $('#search-box').oninput=render;render();
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 排行榜 ============ */
+const RANK_FILE='/harvested/rank/all-rank.json';  // 完整榜单数据(含 rankList top100)
+let rankData=null;   // 榜单全量缓存
+
+async function rankView(main){
+  main.innerHTML='<div class="loading">加载排行榜</div>';
+  try{
+    if(!rankData)rankData=await getJSON(RANK_FILE);
+    const entries=Object.values(rankData);
+    // 统计
+    const scopes={};
+    for(const v of entries){
+      const s=v.areaScope||'?';
+      scopes[s]=scopes[s]||{n:0,people:0};
+      scopes[s].n++; scopes[s].people+=(v.rankCount||0);
+    }
+    const lbl={city:'城市榜',school:'驾校榜',country:'全国榜'};
+    let html=`<h1>排行榜 <span class="hash">// ${fmt(entries.length)} 个榜单</span></h1>
+    <div class="sub">驾考宝典各科目(科目1/科目4/资格证)考试成绩实时榜, 每榜 top100 名, 按城市/驾校/全国 × 日/周/月/全部 采集. 点击榜单看排名详情.</div>
+    <div class="grid">
+      <div class="tile"><div class="n">${fmt(entries.length)}</div><div class="l">榜单总数</div></div>
+      <div class="tile"><div class="n">${fmt(entries.reduce((a,v)=>a+(v.rankCount||0),0))}</div><div class="l">上榜人次</div></div>
+      <div class="tile"><div class="n">${Object.values(scopes).reduce((a,s)=>a+s.n,0)}<small>×</small></div><div class="l">范围榜</div></div>
+    </div>
+    <h2>按范围浏览</h2><div class="car-grid">`;
+    for(const [scope,st] of Object.entries(scopes)){
+      html+=`<div class="car" onclick="rankScope('${scope}')"><div class="name">${esc(lbl[scope]||scope)}</div>
+        <div class="qs">${fmt(st.n)} 榜单 · ${fmt(st.people)} 人次</div></div>`;
+    }
+    html+='</div>';
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+function rankScope(scope){
+  if(!rankData)return;
+  const lbl={city:'城市榜',school:'驾校榜',country:'全国榜'};
+  const sub=lbl[scope]||scope;
+  currentView='rank';crumb=[{label:'排行榜',fn:()=>rankView($('#main'))},{label:sub}];
+  renderNav();
+  const main=$('#main');
+  // 按城市分组（驾校榜/城市榜都按城市列；全国榜只有几个直接列）
+  const cities={};
+  for(const v of Object.values(rankData)){
+    if(v.areaScope!==scope)continue;
+    const c=v.cityName||'--';
+    cities[c]=cities[c]||[];
+    cities[c].push(v);
+  }
+  const cityNames=Object.keys(cities).sort((a,b)=>cities[b].length-cities[a].length);
+  const tlbl={day:'今日',week:'本周',month:'本月',all:'全部'};
+  let html=crumbBar();
+  html+=`<h1>${esc(sub)} <span class="hash">// ${fmt(cityNames.length)} 城市 / ${fmt(Object.values(cities).reduce((a,c)=>a+c.length,0))} 榜</span></h1>
+  <div class="sub">${scope==='country'?'全国各省/全国范围':(scope==='school'?'每个城市前2驾校的驾校成绩榜':'每个城市的城市成绩榜')} · 按 科目1/科目4/资格证 × 日/周/月/全部</div>
+  <input id="search-box" placeholder="过滤城市名..."><div id="rank-scope"></div>`;
+  main.innerHTML=html;
+  const render=()=>{
+    const f=$('#search-box').value.trim().toLowerCase();
+    let h=`<table><tr><th>城市</th><th class="num">榜单</th><th>科目</th><th>时段</th></tr>`;
+    for(const c of cityNames){
+      if(f&&!c.toLowerCase().includes(f))continue;
+      for(const v of cities[c]){
+        const dom=v.domain||'';
+        const kemu=dom.includes('zige')?'资格证':(dom.includes('ke4')?'科目4':'科目1');
+        h+=`<tr style="cursor:pointer" onclick="rankDetail('${esc(v.cityCode||v.rankArea||c)}','${esc(v.timeScope)}','${esc(dom)}')">
+          <td>${esc(c)}</td><td class="num">${fmt(v.rankCount||0)}</td>
+          <td class="dim">${kemu}</td><td class="dim">${tlbl[v.timeScope]||v.timeScope}</td></tr>`;
+      }
+    }
+    h+='</table>';
+    $('#rank-scope').innerHTML=h;
+  };
+  $('#search-box').oninput=render;render();
+}
+
+function rankDetail(cityCode,timeScope,domain){
+  if(!rankData)return;
+  // 在数据里找对应榜单（用 cityCode+timeScope+domain 定位，驾校榜需额外 schoolCode 但这里取第一个匹配）
+  const hits=Object.entries(rankData).filter(([k,v])=>v.areaScope!=='country'&&v.cityCode==cityCode&&v.timeScope==timeScope&&v.domain==domain);
+  if(!hits.length){alert('未找到该榜单');return;}
+  const [k,v]=hits[0];
+  currentView='rank';crumb=[{label:'排行榜',fn:()=>rankView($('#main'))},{label:(v.cityName||cityCode)+' '+(v.timeScope||'')}];
+  renderNav();
+  const main=$('#main');
+  const tlbl={day:'今日',week:'本周',month:'本月',all:'全部'};
+  const dom=v.domain||'';
+  const kemu=dom.includes('zige')?'资格证':(dom.includes('ke4')?'科目4':'科目1');
+  const list=v.rankList||[];
+  const fmtDur=s=>{if(s==null)return '--';if(s<60)return s+'s';const m=Math.floor(s/60),r=s%60;return m+'m'+r+'s';};
+  const dt=t=>t?new Date(t).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'--';
+  const medal=r=>r===1?'🥇':(r===2?'🥈':(r===3?'🥉':''));
+  let html=crumbBar();
+  html+=`<h1>${esc((v.cityName||v.rankArea||cityCode)+' · '+kemu)} <span class="hash">// ${esc(tlbl[v.timeScope]||v.timeScope)}榜 top${fmt(list.length)}</span></h1>
+  <div class="sub">${v.schoolName&&v.areaScope==='school'?esc(v.schoolName)+' · ':''}成绩排名. 分数相同时按完成用时排序(用时少者靠前). 抓取于 ${dt(v.dateTime)}.</div>
+  <table><tr><th>#</th><th>昵称</th><th class="num">分数</th><th class="num">用时</th><th>考试时间</th></tr>`;
+  for(const r of list){
+    html+=`<tr><td>${medal(r.rank)}${r.rank||'-'}</td>
+      <td>${esc(r.nickname||'匿名')}</td>
+      <td class="num">${r.score??'--'}</td>
+      <td class="num">${fmtDur(r.elapsed)}</td>
+      <td class="dim">${dt(r.examTime)}</td></tr>`;
+  }
+  html+='</table>';
+  main.innerHTML=html;
+}
+window.rankScope=rankScope;window.rankDetail=rankDetail;
+
+/* ============ 驾校 ============ */
+async function jiaxiaoView(main){
+  main.innerHTML='<div class="loading">加载驾校数据</div>';
+  try{
+    const d=await getJSON(HV+'/jiaxiao/all-cities.json');
+    const cities=Object.keys(d);
+    let html=`<h1>驾校 <span class="hash">// ${fmt(cities.length)} 城市 / ${fmt(Object.values(d).reduce((a,c)=>a+c.length,0))} 驾校</span></h1>
+    <div class="sub">全国驾校列表. 点击城市看驾校.</div>
+    <div class="car-grid">`;
+    for(const c of cities){
+      const schools=d[c]||[];
+      html+=`<div class="car" onclick="openSchools('${c}')"><div class="name">${esc(schools[0]?.cityName||c)}</div>
+        <div class="meta">${esc(c)}</div><div class="qs">${fmt(schools.length)} 驾校</div></div>`;
+    }
+    html+='</div>';
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+function openSchools(ccode){
+  currentView='schools';crumb=[{label:'驾校',fn:()=>jiaxiaoView($('#main'))},{label:ccode,fn:()=>openSchools(ccode)}];
+  renderNav();
+  const main=$('#main');
+  getJSON(HV+'/jiaxiao/all-cities.json').then(d=>{
+    const schools=d[ccode]||[];
+    let html=crumbBar();
+    html+=`<h1>${esc(schools[0]?.cityName||ccode)} <span class="hash">// ${fmt(schools.length)} 驾校</span></h1>
+    <table><tr><th>驾校</th><th>拼音</th><th class="num">评分</th><th class="num">ID</th><th>code</th></tr>`;
+    for(const s of schools){
+      html+=`<tr><td>${esc(s.name)}</td><td class="dim">${esc(s.pinyin||'')}</td>
+        <td class="num">${s.score??'--'}</td><td class="num">${s.id??'--'}</td><td class="dim">${esc(s.code||'')}</td></tr>`;
+    }
+    html+='</table>';
+    main.innerHTML=html;
+  }).catch(e=>{main.innerHTML=`<div class="err">${esc(e.message)}</div>`;});
+}
+
+/* ============ 路线视频 ============ */
+let routeIdx=null;   // route_index.json 缓存
+async function routeView(main){
+  main.innerHTML='<div class="loading">加载路线视频</div>';
+  try{
+    if(!routeIdx)routeIdx=await getJSON(FW+'/route_index.json');
+    const cities=Object.keys(routeIdx);
+    const nPlace=cities.reduce((a,c)=>a+routeIdx[c].places.length,0);
+    const nVid=cities.reduce((a,c)=>a+routeIdx[c].places.reduce((x,p)=>x+p.videos.length,0),0);
+    main.innerHTML=`<h1>路线视频 <span class="hash">// ${fmt(cities.length)} 城市 / ${fmt(nPlace)} 考点 / ${fmt(nVid)} 视频</span></h1>
+    <div class="sub">科目二/科目三 考试路线视频. 点击城市 → 考点 → 内嵌播放.</div>
+    <div class="err" style="margin:0 0 10px">[采集快照已过期] 视频链接是采集时生成的临时 auth_key (限时约24h), 过期后 CDN 返回 403, 不可播放. 与讲解视频不同(讲解视频 CDN 不校验 auth_key 永久可播). 需重新采集刷新.</div>
+    <input id="search-box" placeholder="城市名过滤..."><div id="route-list"></div>`;
+    const render=()=>{
+      const f=$('#search-box').value.trim().toLowerCase();
+      const list=cities.filter(k=>!f||routeIdx[k].cityName.toLowerCase().includes(f)||k.includes(f)).slice(0,600);
+      $('#route-list').innerHTML=`<table><tr><th>城市</th><th class="num">考点</th><th class="num">视频</th></tr>`+
+        list.map(c=>{const ci=routeIdx[c];
+          return `<tr><td><a href="#" onclick="routeDetail('${esc(c)}');return false">${esc(ci.cityName||c)}</a></td>
+            <td class="num">${fmt(ci.places.length)}</td>
+            <td class="num">${fmt(ci.places.reduce((a,p)=>a+p.videos.length,0))}</td></tr>`;}).join('')+'</table>';
+    };
+    $('#search-box').oninput=render;render();
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+function routeDetail(ccode){
+  currentView='route-detail';crumb=[{label:'路线视频',fn:()=>routeView($('#main'))},{label:routeIdx[ccode]?.cityName||ccode,fn:()=>routeDetail(ccode)}];
+  renderNav();
+  const main=$('#main');
+  const city=routeIdx[ccode];
+  if(!city){main.innerHTML=`<div class="empty">城市 ${ccode} 无数据</div>`;return;}
+  let html=crumbBar();
+  html+=`<h1>${esc(city.cityName)} <span class="hash">// ${fmt(city.places.length)} 考点</span></h1>
+  <div class="sub">点击考点看路线视频.</div>
+  <div class="err" style="margin:0 0 10px">[采集快照已过期] 视频不可播放 (CDN 临时 auth_key 已过期, HTTP 403).</div>
+  <div class="car-grid">`;
+  for(const p of city.places){
+    const nV=p.videos.length;
+    html+=`<div class="car" onclick="routePlace('${esc(ccode)}',${p.placeId})">
+      <div class="name">${esc(p.placeName||p.areaName||'--')}</div>
+      <div class="meta">${p.price!=null?'¥'+fmt(p.price/100):''}</div>
+      <div class="qs">${fmt(nV)} 路线 <span class="badge new">快照过期</span></div></div>`;
+  }
+  html+='</div>';
+  main.innerHTML=html;
+}
+
+function routePlace(ccode,placeId){
+  crumb=crumb.slice(0,2).concat([{label:'考点 '+placeId}]);
+  renderNav();
+  const main=$('#main');
+  const city=routeIdx[ccode];
+  const place=(city?.places||[]).find(p=>String(p.placeId)===String(placeId));
+  if(!place){main.innerHTML=`<div class="empty">考点不存在</div>`;return;}
+  let html=crumbBar();
+  html+=`<h1>${esc(place.placeName||place.areaName||'')} <span class="hash">// ${fmt(place.videos.length)} 路线</span></h1>
+  <div class="err" style="margin:0 0 10px">[采集快照已过期] 视频链接为采集时临时 auth_key, 已过期 CDN 403 不可播. 元数据保留可浏览.</div>`;
+  // 视频列表 (快照过期, 不内嵌播放器, 只列元数据)
+  html+=`<h2>路线列表</h2><table><tr><th>路线</th><th class="num">时长s</th><th class="num">播放</th><th class="num">档位</th></tr>`;
+  for(const v of place.videos){
+    html+=`<tr><td>${esc(v.name||'--')}</td><td class="num">${v.duration??'--'}</td>
+      <td class="num">${v.viewCount!=null?fmt(v.viewCount):'--'}</td>
+      <td class="num">${v.carGear?esc(v.carGear.join('/')):'--'}</td></tr>`;
+  }
+  html+='</table>';
+  main.innerHTML=html;
+}
+
+
+/* ============ 交通图标 ============ */
+async function iconView(main){
+  main.innerHTML='<div class="loading">加载交通图标</div>';
+  try{
+    const d=await getJSON(HV+'/traffic-icon/all-icons.json');
+    const groups=Object.keys(d);
+    const all=groups.reduce((a,g)=>a.concat(d[g]),[]);
+    main.innerHTML=`<h1>交通图标 <span class="hash">// ${fmt(all.length)} 图标 / ${fmt(groups.length)} 组</span></h1>
+    <div class="sub">科目一 交通标志/标线. 点击图标看图.</div>`;
+    let html=main.innerHTML;
+    for(const g of groups){
+      html+=`<details><summary>组 ${g} (${d[g].length} 个)</summary><table><tr><th>图标</th><th>内容</th></tr>`;
+      for(const i of d[g]){
+        html+=`<tr><td>${i.imageUrl?`<a href="${esc(i.imageUrl)}" target="_blank">img</a>`:'--'}</td>
+          <td>${esc(i.content||'')}</td></tr>`;
+      }
+      html+='</table></details>';
+    }
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 课件 ============ */
+async function kejianView(main){
+  main.innerHTML='<div class="loading">加载课件</div>';
+  try{
+    const d=await getJSON(HV+'/kejian/all-lectures.json');
+    const keys=Object.keys(d);
+    let nLect=keys.reduce((a,k)=>a+(d[k]||[]).reduce((x,c)=>x+(c.lectureDataList||[]).length,0),0);
+    // 汇总权限
+    let permOpen=0, permLocked=0;
+    for(const k of keys){for(const c of d[k]||[]){for(const l of c.lectureDataList||[]){l.permission?permOpen++:permLocked++;}}}
+    main.innerHTML=`<h1>课件 <span class="hash">// ${fmt(keys.length)} 章节组 / ${fmt(nLect)} 课件</span></h1>
+    <div class="sub">科目一/科目四 课件讲义. 全部 ${fmt(permLocked)} 条为 VIP 预览(29秒). 链接为采集快照, 过期后 403.</div>
+    <div class="grid">
+      <div class="tile"><div class="n">${fmt(nLect)}</div><div class="l">课件总数</div></div>
+      <div class="tile"><div class="n">${fmt(permOpen)}</div><div class="l">开放</div></div>
+      <div class="tile"><div class="n">${fmt(permLocked)}</div><div class="l">VIP预览(29s)</div></div>
+    </div>`;
+    let html=main.innerHTML;
+    for(const k of keys){
+      const chs=d[k]||[];
+      html+=`<details><summary>${esc(k)} (${chs.length} 章)</summary>`;
+      for(const c of chs){
+        const lds=c.lectureDataList||[];
+        html+=`<h3>${esc(c.chapterName||'')}</h3><table><tr><th>课程</th><th>标题</th><th>状态</th><th class="num">时长</th><th class="num">题数</th><th class="num">播放</th><th class="num">ID</th></tr>`;
+        for(const l of lds){
+          const prev=l.previewDuration??l.duration??29;
+          const full=l.originalDuration??'';
+          const st=l.permission
+            ?'<span class="badge ok">开放</span>'
+            :`<span class="badge vip" title="官方仅开放${prev}秒预览, 完整版需VIP">VIP预览</span>`;
+          const dur=l.permission
+            ?`${l.duration??'--'}${full&&full!==l.duration?`<span class="dim">/${full}</span>`:''}`
+            :`<span class="dim" title="官方仅下发${prev}秒预览片段">${prev}s</span><span class="dim">/${full}</span>`;
+          html+=`<tr><td>${esc(l.title||'--')}</td><td>${esc(l.subTitle||'')}</td>
+            <td>${st}</td>
+            <td class="num">${dur}</td>
+            <td class="num">${l.questionCount??'--'}</td><td class="num">${l.viewCount!=null?fmt(l.viewCount):'--'}</td>
+            <td class="num">${l.id??'--'}</td></tr>`;
+        }
+        html+='</table>';
+      }
+      html+='</details>';
+    }
+    html+=`<div class="sub" style="margin-top:12px">课件视频实测 HTTP 403 不可播放(与讲解视频不同, 讲解视频全部可播). 数据中 permission 全为 false, 官方仅下发29秒预览, 完整版需 VIP 账号.</div>`;
+    main.innerHTML=html;
+  }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+
+/* ============ 其他数据 ============ */
+async function miscView(main){
+  const items=[
+    ['exam-project','考试项目',HV+'/exam-project/all.json',d=>Object.keys(d).length],
+    ['member','会员',HV+'/member/auth-all.json',d=>Object.keys(d).length],
+    ['misc','杂项',HV+'/misc/faq-all.json',d=>Object.keys(d).length],
+    ['tiku-auth','登录态',HV+'/tiku-auth/relearn-all.json',d=>Object.keys(d).length],
+    ['tiku-ext','扩展',HV+'/tiku-ext/question-lis.json',d=>Object.keys(d).length],
+    ['probe','探针',HV+'/probe/video-list.json',d=>Object.keys(d).length],
+  ];
+  let html=`<h1>其他数据</h1><div class="sub">探测/辅助数据域. 每项 JSON dump.</div>`;
+  for(const [k,label,url] of items)html+=`<details><summary>${label} (${k})</summary><div id="misc-${k}"><div class="loading">加载</div></div></details>`;
+  main.innerHTML=html;
+  for(const [k,label,url,c] of items){
+    (async()=>{
+      const el=main.querySelector(`#misc-${k}`);
+      try{
+        const d=await getJSON(url);
+        el.innerHTML=`<div class="sub">${fmt(c(d))} 条</div><pre class="dump">${esc(JSON.stringify(d,null,1).slice(0,3000))}</pre>`;
+      }catch(e){el.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+    })();
+  }
+}
+
+/* 暴露给 onclick */
+window.openCar=openCar;window.openChapter=openChapter;window.openQuestion=openQuestion;
+window.openSchools=openSchools;window.routeDetail=routeDetail;
+window.routePlace=routePlace;
+
+/* ============ 启动 ============ */
+renderNav();
+overviewView($('#main'));
+</script>
+</body>
+</html>

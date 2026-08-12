@@ -1,0 +1,46 @@
+# ===== 生成物（可从 dbs/ 数据源重建，不入库） =====
+
+# 每库独立数据集（前端数据，可重导）
+data/*
+!data/index.json
+
+# 全库完整画像 / 媒体
+exports/
+media/
+extracted/
+
+# 业务域采集产物（需签名机在线采集）
+harvested/
+
+# 前端按需加载拆分（可由 prep.py 重建）
+frontend/by_qid/
+frontend/rank_index.json
+frontend/route_index.json
+frontend/dp_count.json
+frontend/_count.json
+
+# 日志
+logs/
+*.log
+
+# ===== 隐私 / 敏感 =====
+# 签名机（外部依赖，含 secret）
+sign_runner/
+auth_token.txt
+*_token*.txt
+*.pcap
+
+# 会员/登录态/讨论区 全量（含用户昵称等 PII）
+harvested/member/
+harvested/tiku-auth/
+harvested/dianping/
+
+# ===== 临时 / 系统 =====
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+._one_url.txt
+_route_urls.txt
