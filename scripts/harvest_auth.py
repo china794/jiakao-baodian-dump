@@ -1,5 +1,5 @@
 """登录态数据采集：重学题库 / VIP解析 / 会员端点
-依赖 auth_token.txt 已有 token，签名机 main=run.js。
+依赖登录态 token 文件（由签名机注入的客户端登录态），签名机 main=run.js。
 """
 import json, sys, time
 sys.path.insert(0, 'scripts')
