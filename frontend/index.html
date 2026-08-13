@@ -129,12 +129,21 @@ a:hover{text-decoration:underline}
 button{background:var(--bg2);border:1px solid var(--fg-dim);color:var(--fg);font-family:var(--mono);font-size:10px;padding:2px 9px;cursor:pointer;margin-right:4px}
 button:hover{border-color:var(--fg);color:var(--fg)}
 /* 状态 */
-.loading{color:var(--fg-dim);font-size:11px;padding:16px;text-align:center}
-.loading::before{content:"[LOADING] "}
+.loading{color:var(--fg-dim);font-size:11px;padding:16px;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}
+.loading::before{content:"";width:10px;height:10px;border:1px solid var(--fg-mut);border-top-color:var(--amber);animation:spin .9s linear infinite;flex-shrink:0}
 .empty{color:var(--fg-mut);font-size:11px;padding:16px;text-align:center}
 .empty::before{content:"[EMPTY] "}
 .err{color:var(--red);font-size:11px;padding:16px;text-align:center;white-space:pre-wrap}
 .err::before{content:"[ERROR] "}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* 顶部加载进度条: 细条 + 右侧活动提示, 固定于视口顶端, 不挡操作 */
+#prog{position:fixed;top:0;left:0;right:0;z-index:100;display:none;pointer-events:none}
+#prog.on{display:block}
+#prog-bar{height:3px;background:var(--bg3);overflow:hidden}
+#prog-fill{height:100%;width:20%;background:var(--amber);transition:width .18s ease}
+#prog-fill.indet{animation:progflow 1.15s ease-in-out infinite}
+@keyframes progflow{0%{margin-left:-20%}100%{margin-left:100%}}
+#prog-label{position:absolute;top:5px;right:10px;font-size:10px;color:var(--fg-dim);background:rgba(17,17,17,.9);border:1px solid var(--border);padding:1px 7px;white-space:nowrap}
 /* 分页 */
 .pager{margin:8px 0;display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .pager .info{color:var(--fg-dim);font-size:10px}
@@ -207,6 +216,9 @@ body.menu-open #scrim{display:block;opacity:1;pointer-events:auto}
 </div>
 <div id="scrim" onclick="closeMenu()"></div>
 
+<!-- 顶部加载进度条 (JS 在 #topbar 后注入) -->
+<div id="prog"><div id="prog-bar"><div id="prog-fill"></div></div></div>
+
 <script>
 /* ============ 路径 ============ */
 /* 根路径自动检测: 支持部署在子路径(如 nginx /jkbd/frontend/)或根路径(/frontend/).
@@ -241,8 +253,8 @@ async function loadVids(){
   if(vidMap)return vidMap;
   try{
     const [v,vu]=await Promise.all([
-      getJSON(HV+'/video-explain/video-list-all.json'),
-      getJSON(HV+'/video-explain/video-urls.json')
+      loadJSON(HV+'/video-explain/video-list-all.json',{ttl:PAGE_CACHE_TTL}),
+      loadJSON(HV+'/video-explain/video-urls.json',{ttl:PAGE_CACHE_TTL})
     ]);
     vidUrlMap=vu||{};
     vidMap={};
@@ -289,14 +301,93 @@ document.addEventListener('DOMContentLoaded',()=>{
   const mb=document.getElementById('menu-btn');
   if(mb)mb.addEventListener('click',e=>{e.stopPropagation();openMenu();});
 });
-async function getJSON(url){
-  setLoad('GET '+url.split('/').slice(-2).join('/'));
+/* ---- 顶部进度条: 顶部细条(字节进度/不确定动画) + 右上活动数 + 中央loading的spinner ---- */
+const pg={n:0,lastShown:0,sumBytes:0,sumTotal:0,total:0,done:0,label:''};
+const pFmt=n=>n==null?'--':Number(n).toLocaleString();
+const pBar=()=>$('#prog-fill'), pWrp=()=>$('#prog');
+function pgRefresh(){
+  const el=pWrp(); if(!el)return;
+  if(pg.n>0){
+    el.classList.add('on');
+    const t=Date.now()-pg.lastShown;
+    let label=pg.label;
+    if(pg.total>1&&pg.done>0){label+=` ${pg.done}/${pg.total}`;}
+    if(pg.sumTotal>0){
+      const pct=Math.min(99,Math.round(pg.sumBytes/pg.sumTotal*100));
+      label+=` ${pct}% (${pFmt(pg.sumBytes)}/${pFmt(pg.sumTotal)})`;
+    }else if(t>300){label+=' …';}
+    const lbl=$('#prog-label');
+    if(lbl)lbl.textContent=label;
+    const fb=pBar();
+    if(pg.sumTotal>0){
+      fb.classList.remove('indet');
+      fb.style.width=Math.min(100,Math.round(pg.sumBytes/pg.sumTotal*100))+'%';
+      fb.style.marginLeft='0';
+    }else{
+      fb.classList.add('indet');fb.style.width='20%';fb.style.marginLeft='0';
+    }
+  }else{
+    el.classList.remove('on');
+    const fb=pBar();fb.classList.remove('indet');fb.style.width='0';
+  }
+}
+function pgBegin(label,total){pg.n++;pg.lastShown=Date.now();pg.label=label;pg.total=total;pg.done=0;pg.sumBytes=0;pg.sumTotal=0;pgRefresh();}
+function pgEnd(){pg.done++;pg.n=Math.max(0,pg.n-1);pgRefresh();}
+function pgBytes(b,t){pg.sumBytes+=b;pg.sumTotal+=t;pgRefresh();}
+async function getJSON(url,opt){
+  const o=opt||{};
+  const label=o.label||'GET '+url.split('/').slice(-2).join('/');
+  const signal=o.timeout!=null?AbortSignal.timeout(o.timeout):null;
+  pgBegin(label,o.total||0);
+  setLoad(label);
   try{
-    const r=await fetch(url,{cache:'no-store'});
+    const r=await fetch(url,{cache:'no-store',signal});
     if(!r.ok)throw new Error('HTTP '+r.status+' '+url);
+    if(o.total){
+      const ct=Number(r.headers.get('Content-Length'))||0;
+      const rd=r.body&&ct?r.body.getReader():null;
+      if(rd){
+        const chunks=[],tk=ct>0?ct:1;
+        while(true){
+          const{done,value}=await rd.read();
+          if(done)break;
+          chunks.push(value);pgBytes(value.length,tk);
+        }
+        const buf=new Uint8Array(chunks.reduce((a,c)=>a+c.length,0));
+        let off=0;for(const c of chunks){buf.set(c,off);off+=c.length;}
+        return JSON.parse(new TextDecoder().decode(buf));
+      }
+    }
     return await r.json();
-  }catch(e){throw new Error(e.message);}
-  finally{setLoad('IDLE');}
+  }catch(e){if(e.name==='AbortError')throw new Error('超时: '+label);throw e;}
+  finally{pgEnd();setLoad('IDLE');}
+}
+/* ---- HTTP 缓存层: 结果存 localStorage, TTL 到期才重拉.
+   只缓存小文件(索引/计数/集合/榜单汇总), 大文件(排行榜166MB/题库)走内存缓存+字节进度. ---- */
+const CACHE_PREFIX='jkbdv4:';
+const PAGE_CACHE_TTL=10*60*1000;   // 小文件缓存 10 分钟
+function cacheGet(url){
+  try{
+    const raw=localStorage.getItem(CACHE_PREFIX+url);
+    if(!raw)return null;
+    const o=JSON.parse(raw);
+    if(!o.expires||Date.now()>o.expires)return null;
+    return o.v;
+  }catch(e){return null;}
+}
+function cacheSet(url,v,ttlMs){
+  try{localStorage.setItem(CACHE_PREFIX+url,JSON.stringify({expires:Date.now()+ttlMs,v}));}catch(e){}
+}
+async function loadJSON(url,opt){
+  const o=opt||{};
+  if(o.ttl>0){
+    const cached=cacheGet(url);
+    if(cached!==null)return cached;
+    const v=await getJSON(url,o);
+    cacheSet(url,v,o.ttl);
+    return v;
+  }
+  return await getJSON(url,o);
 }
 
 /* ============ 导航 ============ */
@@ -350,7 +441,7 @@ function goView(v){
 async function overviewView(main){
   main.innerHTML='<div class="loading">加载总览</div>';
   try{
-    if(!INDEX){INDEX=await getJSON(DATA+'/index.json');}
+    if(!INDEX){INDEX=await loadJSON(DATA+'/index.json',{ttl:PAGE_CACHE_TTL});}
   }catch(e){main.innerHTML=`<div class="err">无法加载 data/index.json<br>${esc(e.message)}<br>启动: cd jiakao-baodian-live && python frontend/server.py</div>`;return;}
   const dbs=INDEX.dbs||{};
   totalQuestions=INDEX.total_questions||Object.values(dbs).reduce((a,b)=>a+(b.questions||0),0);
@@ -395,11 +486,13 @@ async function loadHarvestStats(el){
   ];
   const navMap={dianping:'dianping',video:'video',official:'official',rank:'rank',route:'route',jiaxiao:'jiaxiao',icon:'icon',kejian:'kejian',vipx:'official'};
   el.innerHTML=items.map(([k,label])=>`<div class="tile hv-tile" id="hvt-${k}" data-view="${navMap[k]||''}" onclick="goView('${navMap[k]||''}')"><div class="n">--</div><div class="l">${label} →</div></div>`).join('');
+  let ok=0;
   for(const [k,label,url,c1,c2] of items){
     try{
-      const d=await getJSON(url);
+      const d=await loadJSON(url,{ttl:PAGE_CACHE_TTL});
       const t=el.querySelector(`#hvt-${k}`);
       if(t)t.innerHTML=`<div class="n">${fmt(c1(d))}</div><div class="l">${label} →</div>`;
+      ok++;
     }catch(e){}
   }
 }
@@ -407,7 +500,7 @@ async function loadHarvestStats(el){
 /* ============ 题库浏览 ============ */
 async function banksView(main){
   main.innerHTML='<div class="loading">加载车型列表</div>';
-  try{if(!INDEX)INDEX=await getJSON(DATA+'/index.json');}
+  try{if(!INDEX)INDEX=await loadJSON(DATA+'/index.json',{ttl:PAGE_CACHE_TTL});}
   catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;return;}
   const dbs=INDEX.dbs||{};
   let html=`<h1>题库浏览 <span class="hash">// 33 车型库</span></h1>
@@ -434,7 +527,11 @@ async function openCar(carType){
   const main=$('#main');
   main.innerHTML=`<div class="loading">加载 ${carType} 题库</div>`;
   try{
-    const [idx,q]=await Promise.all([getJSON(`${DATA}/${carType}/index.json`),loadQuestions(carType),loadVids()]);
+    const [idx,q]=await Promise.all([
+      loadJSON(`${DATA}/${carType}/index.json`,{ttl:PAGE_CACHE_TTL}),
+      loadQuestions(carType),
+      loadVids()
+    ]);
     const chapters=idx.chapters||[];
     const nVids=vidMap?q.filter(x=>vidMap[String(x.question_id)]&&vidMap[String(x.question_id)].length).length:0;
     let html=crumbBar();
@@ -468,8 +565,8 @@ async function openChapter(carType,file){
   main.innerHTML=`<div class="loading">加载章节</div>`;
   try{
     const [ch,idx]=await Promise.all([
-      getJSON(`${DATA}/${carType}/${file}`),
-      getJSON(`${DATA}/${carType}/index.json`),
+      loadJSON(`${DATA}/${carType}/${file}`,{ttl:PAGE_CACHE_TTL}),
+      loadJSON(`${DATA}/${carType}/index.json`,{ttl:PAGE_CACHE_TTL}),
       loadVids()
     ]);
     const qIds=(ch.questions||[]).map(x=>x.id);
@@ -498,7 +595,7 @@ function qItem(x,carType){
 }
 
 function exportList(carType,file){
-  getJSON(`${DATA}/${carType}/${file}`).then(ch=>{
+  loadJSON(`${DATA}/${carType}/${file}`,{ttl:PAGE_CACHE_TTL}).then(ch=>{
     const blob=new Blob([JSON.stringify(ch,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=`${carType}_${file.split('/').pop()}`;a.click();
@@ -561,7 +658,7 @@ function qTags(x){
 
 async function loadDianping(qid,el){
   try{
-    const d=await getJSON(`${FW}/by_qid/${qid}.json`);
+    const d=await loadJSON(`${FW}/by_qid/${qid}.json`,{ttl:PAGE_CACHE_TTL});
     if(!d||!d.length){el.innerHTML='<div class="empty">无评论</div>';return;}
     const fmtTime=t=>{const dt=new Date(t);return dt?`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`:'--';};
     let html=`<div class="sub">${fmt(d.length)} 条评论</div><ul class="qlist">`;
@@ -590,7 +687,7 @@ async function doSearch(q){
   if(!q){res.innerHTML='';return;}
   res.innerHTML='<div class="loading">搜索中</div>';
   try{
-    if(!INDEX)INDEX=await getJSON(DATA+'/index.json');
+    if(!INDEX)INDEX=await loadJSON(DATA+'/index.json',{ttl:PAGE_CACHE_TTL});
     const banks=Object.keys(INDEX.dbs||{});
     const isId=/^\d+$/.test(q);
     const out=[];
@@ -621,7 +718,7 @@ async function doSearch(q){
 async function officialView(main){
   main.innerHTML='<div class="loading">加载官方精选</div>';
   try{
-    const s=await getJSON(HV+'/vip-practice/quick500-nanti100.json');
+    const s=await loadJSON(HV+'/vip-practice/quick500-nanti100.json',{ttl:PAGE_CACHE_TTL});
     const q500=s.quick500||[],n100=s.nanti100||[];
     const set=new Set([...q500,...n100]);
     let html=`<h1>官方精选 <span class="hash">// vip-500 + vip-100</span></h1>
@@ -645,7 +742,7 @@ async function officialView(main){
 async function dianpingView(main){
   main.innerHTML='<div class="loading">加载讨论区索引</div>';
   try{
-    const d=await getJSON(FW+'/by_qid/_count.json');
+    const d=await loadJSON(FW+'/by_qid/_count.json',{ttl:PAGE_CACHE_TTL});
     const keys=Object.keys(d);
     const total=keys.reduce((a,k)=>a+d[k],0);
     main.innerHTML=`<h1>真题讨论区 <span class="hash">// ${fmt(keys.length)} 题有评论</span></h1>
@@ -668,8 +765,8 @@ async function videoView(main){
   main.innerHTML='<div class="loading">加载视频列表</div>';
   try{
     const [v,vu]=await Promise.all([
-      getJSON(HV+'/video-explain/video-list-all.json'),
-      getJSON(HV+'/video-explain/video-urls.json')
+      loadJSON(HV+'/video-explain/video-list-all.json',{ttl:PAGE_CACHE_TTL}),
+      loadJSON(HV+'/video-explain/video-urls.json',{ttl:PAGE_CACHE_TTL})
     ]);
     videoUrls=vu||{};
     const list=v.itemList||[];
@@ -701,7 +798,7 @@ let rankData=null;   // 榜单全量缓存
 async function rankView(main){
   main.innerHTML='<div class="loading">加载排行榜</div>';
   try{
-    if(!rankData)rankData=await getJSON(RANK_FILE);
+    if(!rankData)rankData=await getJSON(RANK_FILE,{label:'GET rank/all-rank.json (166MB)',total:1,timeout:120000});
     const entries=Object.values(rankData);
     // 统计
     const scopes={};
@@ -805,7 +902,7 @@ window.rankScope=rankScope;window.rankDetail=rankDetail;
 async function jiaxiaoView(main){
   main.innerHTML='<div class="loading">加载驾校数据</div>';
   try{
-    const d=await getJSON(HV+'/jiaxiao/all-cities.json');
+    const d=await loadJSON(HV+'/jiaxiao/all-cities.json',{ttl:PAGE_CACHE_TTL});
     const cities=Object.keys(d);
     let html=`<h1>驾校 <span class="hash">// ${fmt(cities.length)} 城市 / ${fmt(Object.values(d).reduce((a,c)=>a+c.length,0))} 驾校</span></h1>
     <div class="sub">全国驾校列表. 点击城市看驾校.</div>
@@ -824,7 +921,7 @@ function openSchools(ccode){
   currentView='schools';crumb=[{label:'驾校',fn:()=>jiaxiaoView($('#main'))},{label:ccode,fn:()=>openSchools(ccode)}];
   renderNav();
   const main=$('#main');
-  getJSON(HV+'/jiaxiao/all-cities.json').then(d=>{
+  loadJSON(HV+'/jiaxiao/all-cities.json',{ttl:PAGE_CACHE_TTL}).then(d=>{
     const schools=d[ccode]||[];
     let html=crumbBar();
     html+=`<h1>${esc(schools[0]?.cityName||ccode)} <span class="hash">// ${fmt(schools.length)} 驾校</span></h1>
@@ -843,7 +940,7 @@ let routeIdx=null;   // route_index.json 缓存
 async function routeView(main){
   main.innerHTML='<div class="loading">加载路线视频</div>';
   try{
-    if(!routeIdx)routeIdx=await getJSON(FW+'/route_index.json');
+    if(!routeIdx)routeIdx=await loadJSON(FW+'/route_index.json',{ttl:PAGE_CACHE_TTL});
     const cities=Object.keys(routeIdx);
     const nPlace=cities.reduce((a,c)=>a+routeIdx[c].places.length,0);
     const nVid=cities.reduce((a,c)=>a+routeIdx[c].places.reduce((x,p)=>x+p.videos.length,0),0);
@@ -912,7 +1009,7 @@ function routePlace(ccode,placeId){
 async function iconView(main){
   main.innerHTML='<div class="loading">加载交通图标</div>';
   try{
-    const d=await getJSON(HV+'/traffic-icon/all-icons.json');
+    const d=await loadJSON(HV+'/traffic-icon/all-icons.json',{ttl:PAGE_CACHE_TTL});
     const groups=Object.keys(d);
     const all=groups.reduce((a,g)=>a.concat(d[g]),[]);
     main.innerHTML=`<h1>交通图标 <span class="hash">// ${fmt(all.length)} 图标 / ${fmt(groups.length)} 组</span></h1>
@@ -934,7 +1031,7 @@ async function iconView(main){
 async function kejianView(main){
   main.innerHTML='<div class="loading">加载课件</div>';
   try{
-    const d=await getJSON(HV+'/kejian/all-lectures.json');
+    const d=await loadJSON(HV+'/kejian/all-lectures.json',{ttl:PAGE_CACHE_TTL});
     const keys=Object.keys(d);
     let nLect=keys.reduce((a,k)=>a+(d[k]||[]).reduce((x,c)=>x+(c.lectureDataList||[]).length,0),0);
     // 汇总权限
@@ -995,7 +1092,7 @@ async function miscView(main){
     (async()=>{
       const el=main.querySelector(`#misc-${k}`);
       try{
-        const d=await getJSON(url);
+        const d=await loadJSON(url,{ttl:PAGE_CACHE_TTL});
         el.innerHTML=`<div class="sub">${fmt(c(d))} 条</div><pre class="dump">${esc(JSON.stringify(d,null,1).slice(0,3000))}</pre>`;
       }catch(e){el.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
     })();
