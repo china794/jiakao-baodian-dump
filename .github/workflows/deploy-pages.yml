@@ -1,0 +1,43 @@
+# 部署 landing page 到 GitHub Pages
+# 本仓库是纯净源码版，不含前端数据（data/harvested 均 gitignore）。
+# Pages 仅展示 docs/index.html 作为仓库 landing page。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/index.html'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Build site
+        run: |
+          mkdir -p _site
+          cp docs/index.html _site/
+          echo "jkb-dump" > _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+
+      - name: Deploy Pages
+        uses: actions/deploy-pages@v4
