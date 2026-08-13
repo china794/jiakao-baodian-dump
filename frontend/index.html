@@ -209,10 +209,13 @@ body.menu-open #scrim{display:block;opacity:1;pointer-events:auto}
 
 <script>
 /* ============ 路径 ============ */
-/* 绝对路径: server.py 以项目根为根目录, 页面在 /frontend/ 下.
-   用绝对路径避免相对路径解析到 /frontend/ 子目录 */
-const DATA='/data'; const HV='/harvested';
-const FW='/frontend';                    // by_qid, rank_index, dp_count 在 frontend/
+/* 根路径自动检测: 支持部署在子路径(如 nginx /jkbd/frontend/)或根路径(/frontend/).
+   页面路径含 frontend/ 目录, 它前面的部分即根路径前缀. */
+const _parts=location.pathname.split('/').filter(Boolean);
+const _fi=_parts.lastIndexOf('frontend');          // frontend 目录所在层级
+const ROOT=_fi<=0?'':'/'+_parts.slice(0,_fi).join('/');
+const DATA=ROOT+'/data'; const HV=ROOT+'/harvested';
+const FW=ROOT+'/frontend';               // by_qid, rank_index, dp_count 在 frontend/
 
 /* ============ 车型名 ============ */
 const CAR_NAMES={
