@@ -696,11 +696,14 @@ async function openQuestion(carType,qid){
   main.innerHTML=`<div class="loading">加载题目</div>`;
   try{
     await loadVids();
+    // 单题独立文件: 分桶 q/{题号前两位}/{题号}.json, 平均 1.5KB, 低带宽下毫秒级
+    // 已预拆好(6406 全覆盖), 无需流式扫 11.6MB 全量库
+    const id=String(qid);
+    const bucket=id.slice(0,2);
     let x=null;
-    await streamJSONArray(`${DATA}/${carType}/questions.json`,(o)=>{
-      if(x)return;                       // 已命中, 早停
-      if(String(o.question_id)===String(qid))x=o;
-    },()=>{},{label:`GET ${carType}/questions.json (找题 ${qid})`});
+    try{
+      x=await getJSON(`${DATA}/${carType}/q/${bucket}/${id}.json`,{label:`GET ${carType}/q/${bucket}/${id}.json`});
+    }catch(e){}
     if(!x){main.innerHTML=`<div class="empty">题 ${qid} 不在 ${carType} 库</div>`;return;}
     const letters='ABCDEFGH'.split('');
     const bits=[1,2,4,8,16,32,64,128];
