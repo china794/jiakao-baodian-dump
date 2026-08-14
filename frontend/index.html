@@ -390,6 +390,74 @@ async function loadJSON(url,opt){
   return await getJSON(url,o);
 }
 
+/* ---- 流式 JSON 数组解析: 边下载边解析边回调, 不干等全量.
+   引号状态机扫描顶层逗号/结束, 提取每个数组元素的 JSON 文本就地 parse.
+   依赖: 顶层是数组, 元素为扁平对象, 字符串内可含逗号(选项/解析)但不可含未转义引号.
+   本题库 questions.json 满足此约束. 大文件(几MB~几十MB)用它, 页面边下边出题. ---- */
+const streamDec=new TextDecoder();
+async function streamJSONArray(url,onItem,onDone,opt){
+  const o=opt||{};
+  const label=o.label||'GET '+url.split('/').slice(-2).join('/');
+  const signal=o.timeout!=null?AbortSignal.timeout(o.timeout):null;
+  pgBegin(label,o.total||0);
+  setLoad(label);
+  let count=0;
+  try{
+    const r=await fetch(url,{cache:'no-store',signal});
+    if(!r.ok)throw new Error('HTTP '+r.status+' '+url);
+    const rd=r.body.getReader();
+    const ct=Number(r.headers.get('Content-Length'))||0;
+    const tk=ct>0?ct:1;
+    // 增量扫描: buf 累积不裁剪, pos 记扫描位置跨块, 完整数组元素即时切出回调
+    let buf='',pos=0,depth=0,inStr=false,esc=false,elemFrom=-1,arrDone=false;
+    const scan=()=>{
+      const n=buf.length;
+      while(pos<n&&!arrDone){
+        const ch=buf[pos];
+        if(inStr){
+          if(esc)esc=false;
+          else if(ch==='\\')esc=true;
+          else if(ch==='"')inStr=false;
+          pos++;continue;
+        }
+        if(ch==='"'&&depth>=1){inStr=true;pos++;continue;}
+        if(ch==='{'){if(depth===1&&elemFrom<0)elemFrom=pos;depth++;pos++;continue;}
+        if(ch==='['){depth++;pos++;continue;}
+        if(ch===','&&depth===1&&elemFrom>=0){
+          const raw=buf.slice(elemFrom,pos).trim();
+          try{const obj=JSON.parse(raw);count++;onItem(obj,count);}catch(e){}
+          elemFrom=-1;pos++;continue;
+        }
+        if(ch==='}'){
+          depth--;if(depth<0)depth=0;pos++;continue;
+        }
+        if(ch===']'){
+          if(depth===1){
+            if(elemFrom>=0){
+              const raw=buf.slice(elemFrom,pos).trim();
+              if(raw)try{const obj=JSON.parse(raw);count++;onItem(obj,count);}catch(e){}
+            }
+            arrDone=true;pos++;continue;
+          }
+          depth--;pos++;continue;
+        }
+        pos++;
+      }
+    };
+    while(true){
+      const{done,value}=await rd.read();
+      if(done)break;
+      pgBytes(value.length,tk);
+      buf+=streamDec.decode(value,{stream:true});
+      scan();
+    }
+    buf+=streamDec.decode();                     // flush 尾部未完成字节
+    scan();
+    if(onDone)onDone(count);
+  }catch(e){if(e.name==='AbortError')throw new Error('超时: '+label);throw e;}
+  finally{pgEnd();setLoad('IDLE');}
+}
+
 /* ============ 导航 ============ */
 const NAV=[
  {id:'overview',label:'总览'},
@@ -527,24 +595,24 @@ async function openCar(carType){
   const main=$('#main');
   main.innerHTML=`<div class="loading">加载 ${carType} 题库</div>`;
   try{
-    const [idx,q]=await Promise.all([
+    // index 小文件先出: 章节表立即可点; 题库大文件后台流式计数, 出完刷新统计格
+    const [idx]=await Promise.all([
       loadJSON(`${DATA}/${carType}/index.json`,{ttl:PAGE_CACHE_TTL}),
-      loadQuestions(carType),
       loadVids()
     ]);
     const chapters=idx.chapters||[];
-    const nVids=vidMap?q.filter(x=>vidMap[String(x.question_id)]&&vidMap[String(x.question_id)].length).length:0;
+    const total=idx.count||idx.total||'--';
     let html=crumbBar();
     html+=`<h1>${esc(carType)} <span class="hash">// ${esc(CAR_NAMES[carType]||'')}</span></h1>
-    <div class="sub">${fmt(q.length)} 题 / ${fmt(chapters.length)} 章 / 版本 ${esc(idx.version||'--')}</div>
+    <div class="sub"><span id="totalq">${esc(total)}</span> 题 / ${fmt(chapters.length)} 章 / 版本 ${esc(idx.version||'--')}</div>
     <div class="grid">
-      <div class="tile"><div class="n">${fmt(q.length)}</div><div class="l">QUESTIONS</div></div>
+      <div class="tile"><div class="n" id="t-questions">${esc(total)}</div><div class="l">QUESTIONS</div></div>
       <div class="tile"><div class="n">${fmt(chapters.length)}</div><div class="l">CHAPTERS</div></div>
       <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.judge||0)}</div><div class="l">判断题</div></div>
       <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.single||0)}</div><div class="l">单选题</div></div>
       <div class="tile"><div class="n">${fmt(idx.stats?.option_type?.multi||0)}</div><div class="l">多选题</div></div>
-      <div class="tile hv-tile" onclick="goView('official')"><div class="n">${fmt(q.filter(x=>x.vip_explain).length)}</div><div class="l">vip解析 →</div></div>
-      <div class="tile hv-tile" onclick="goView('video')"><div class="n">${fmt(nVids)}</div><div class="l">有讲解视频 →</div></div>
+      <div class="tile hv-tile" onclick="goView('official')"><div class="n" id="t-vip">…</div><div class="l">vip解析 →</div></div>
+      <div class="tile hv-tile" onclick="goView('video')"><div class="n" id="t-vids">…</div><div class="l">有讲解视频 →</div></div>
     </div>
     <h2>章节</h2><table><tr><th>#</th><th>章节</th><th class="num">题数</th></tr>`;
     for(const c of chapters){
@@ -554,6 +622,14 @@ async function openCar(carType){
     }
     html+='</table>';
     main.innerHTML=html;
+    // 后台流式数统计: 题目总数/vip解析/有视频, 出完刷格子 (不阻塞页面)
+    let cnt=0,vip=0,vids=0;
+    await streamJSONArray(`${DATA}/${carType}/questions.json`,(x)=>{
+      cnt++;if(x.vip_explain)vip++;if(vidMap&&vidMap[String(x.question_id)]?.length)vids++;
+    },()=>{
+      const setT=(id,v)=>{const el=$(id);if(el)el.textContent=fmt(v);};
+      setT('#totalq',cnt);setT('#t-questions',cnt);setT('#t-vip',vip);setT('#t-vids',vids);
+    },{label:`GET ${carType}/questions.json (流式统计)`});
   }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
 }
 
@@ -564,24 +640,33 @@ async function openChapter(carType,file){
   const main=$('#main');
   main.innerHTML=`<div class="loading">加载章节</div>`;
   try{
-    const [ch,idx]=await Promise.all([
+    // 章节文件小(localStorage缓存)先拿; 题库大文件流式, 边下边出题
+    const [ch]=await Promise.all([
       loadJSON(`${DATA}/${carType}/${file}`,{ttl:PAGE_CACHE_TTL}),
-      loadJSON(`${DATA}/${carType}/index.json`,{ttl:PAGE_CACHE_TTL}),
       loadVids()
     ]);
     const qIds=(ch.questions||[]).map(x=>x.id);
-    const q=await loadQuestions(carType);
-    const list=q.filter(x=>qIds.includes(x.question_id));
-    let html=crumbBar();
-    html+=`<h1>${esc(ch.name)} <span class="hash">// ${fmt(list.length)} 题</span></h1>
+    const idSet=new Set(qIds);
+    let rendered=0,hit=0;
+    main.innerHTML=crumbBar()+`<h1>${esc(ch.name)} <span class="hash">// <span id="qcount">0</span> 题</span></h1>
     <div class="pager"><button onclick="exportList('${carType}','${esc(file)}')">EXPORT</button>
-      <span class="info">${list.length} 题</span></div>
-    <ul class="qlist">`;
-    for(const x of list){
-      html+=qItem(x,carType);
-    }
-    html+='</ul>';
-    main.innerHTML=html;
+      <span class="info"><span id="qinfo">0/0</span> 题</span></div>
+    <ul class="qlist" id="qlist"></ul>`;
+    const ul=$('#qlist');
+    const tick=()=>{
+      const el=$('#qcount');if(el)el.textContent=fmt(rendered);
+      const el2=$('#qinfo');if(el2)el2.textContent=`${fmt(rendered)}/${fmt(qIds.length)}`;
+    };
+    await streamJSONArray(`${DATA}/${carType}/questions.json`,(x)=>{
+      if(idSet.has(x.question_id)){
+        hit++;rendered++;
+        ul.insertAdjacentHTML('beforeend',qItem(x,carType));
+        tick();
+      }
+    },()=>{
+      if(hit!==qIds.length)ul.insertAdjacentHTML('beforeend',`<li class="dim">章节里 ${fmt(qIds.length)} 题, 题库流里匹配到 ${fmt(hit)} 题 (缺 ${fmt(qIds.length-hit)} 题未在题库, 可能已下架)</li>`);
+      tick();
+    },{label:`GET ${carType}/questions.json (流式)`});
   }catch(e){main.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
 }
 
@@ -610,8 +695,12 @@ async function openQuestion(carType,qid){
   const main=$('#main');
   main.innerHTML=`<div class="loading">加载题目</div>`;
   try{
-    const [q,vm]=await Promise.all([loadQuestions(carType),loadVids()]);
-    const x=q.find(i=>String(i.question_id)===String(qid));
+    await loadVids();
+    let x=null;
+    await streamJSONArray(`${DATA}/${carType}/questions.json`,(o)=>{
+      if(x)return;                       // 已命中, 早停
+      if(String(o.question_id)===String(qid))x=o;
+    },()=>{},{label:`GET ${carType}/questions.json (找题 ${qid})`});
     if(!x){main.innerHTML=`<div class="empty">题 ${qid} 不在 ${carType} 库</div>`;return;}
     const letters='ABCDEFGH'.split('');
     const bits=[1,2,4,8,16,32,64,128];
@@ -690,27 +779,35 @@ async function doSearch(q){
     if(!INDEX)INDEX=await loadJSON(DATA+'/index.json',{ttl:PAGE_CACHE_TTL});
     const banks=Object.keys(INDEX.dbs||{});
     const isId=/^\d+$/.test(q);
-    const out=[];
+    let out=[],cap=false;
+    // 逐库流式: 每库边下边筛边出, 命中即插入, 不干等整个题库下载完
+    const listEl=document.createElement('div');
+    listEl.innerHTML='<div class="sub"></div><ul class="qlist"></ul>';
+    const subEl=listEl.querySelector('.sub');const ulEl=listEl.querySelector('ul');
     for(const b of banks){
+      if(cap)break;
+      const seen=new Set();
+      const url=`${DATA}/${b}/questions.json`;
       try{
-        const all=await loadQuestions(b);
-        for(const x of all){
+        await streamJSONArray(url,(x)=>{
+          if(out.length>=200){cap=true;return;}
+          if(!isId&&seen.has(x.question_id))return;
           if(isId?String(x.question_id)===q:(x.question||'').includes(q)){
-            out.push(x);if(out.length>=200)break;
+            seen.add(x.question_id);
+            out.push(x);
+            ulEl.insertAdjacentHTML('beforeend',`<li onclick="openQuestion('${x.car_type}',${x.question_id})">
+              <span class="qid">${esc(x.car_type)}:${fmt(x.question_id)}</span>
+              <span class="qtext">${esc((x.question||'').slice(0,70))}</span></li>`);
+            subEl.textContent=`${fmt(out.length)} 条${isId?' (精确题号)':''}`;
           }
-        }
+        },()=>{},{label:`GET ${b}/questions.json (流式搜索)`});
       }catch(e){}
-      if(out.length>=200)break;
+      // 每次换库前把已收集的呈现上去
+      if(out.length)res.innerHTML=listEl.innerHTML;
     }
     if(!out.length){res.innerHTML='<div class="empty">无匹配</div>';return;}
-    let html=`<div class="sub">${fmt(out.length)} 条${isId?' (精确题号)':''}</div><ul class="qlist">`;
-    for(const x of out){
-      html+=`<li onclick="openQuestion('${x.car_type}',${x.question_id})">
-        <span class="qid">${esc(x.car_type)}:${fmt(x.question_id)}</span>
-        <span class="qtext">${esc((x.question||'').slice(0,70))}</span></li>`;
-    }
-    html+='</ul>';
-    res.innerHTML=html;
+    if(cap)subEl.textContent=`${fmt(out.length)} 条${isId?' (精确题号)':''} (已封顶 200)`;
+    res.innerHTML=listEl.innerHTML;
   }catch(e){res.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
 }
 
